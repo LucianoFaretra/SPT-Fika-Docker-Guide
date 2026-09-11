@@ -34,7 +34,7 @@ RUN set -eux; \
 RUN mv /opt/spt /opt/spt-dist \
     && printf '%s\n' "$SPT_VERSION" > /opt/spt-dist/.container-spt-version \
     && mkdir -p /opt/spt
-WORKDIR /opt/spt
+WORKDIR /opt/spt/SPT_Runtime
 
 COPY fika-entrypoint.sh /usr/local/bin/fika-entrypoint.sh
 RUN chmod +x /usr/local/bin/fika-entrypoint.sh

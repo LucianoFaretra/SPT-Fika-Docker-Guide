@@ -40,9 +40,16 @@ docker run -d --name fika --restart unless-stopped \
   "$IMAGE"
 ```
 
-On first boot the container copies the complete SPT and Fika server tree into
-`/srv/spt`. Keep this directory when replacing the container. If the GHCR
-package is private, run `docker login ghcr.io` before pulling it.
+On first boot the container creates this host-side layout in `/srv/spt`:
+
+```text
+/srv/spt/
+  BepInEx/       # Client-mod staging area
+  SPT_Runtime/   # Complete SPT and Fika server runtime
+```
+
+Keep this directory when replacing the container. If the GHCR package is
+private, run `docker login ghcr.io` before pulling it.
 
 ## Networking
 
@@ -107,44 +114,35 @@ Follow startup output with:
 docker compose logs -f fika-server
 ```
 
-The persistent server runtime is stored in `/srv/spt`. Removing the container
-does not remove this directory.
-
-### Migrate Existing Data
-
-Deployments created with the earlier `spt-user` layout must move their existing
-user data before the first full-runtime start:
-
-```sh
-docker compose down
-mkdir -p /srv/spt/user
-cp -a /srv/fika/spt-user/. /srv/spt/user/
-```
+The persistent server runtime is stored in `/srv/spt/SPT_Runtime`. Removing the
+container does not remove this directory.
 
 ## Server Mods
 
-The full SPT installation is available in `/srv/spt`. Standard server mods go
-in `/srv/spt/user/mods`; mods that provide files elsewhere must be extracted
-with their release paths relative to `/srv/spt`. Stop the server before changing
-files, then start it again:
+The full SPT installation is available in `/srv/spt/SPT_Runtime`. Standard
+server mods go in `/srv/spt/SPT_Runtime/user/mods`; mods that provide files
+elsewhere must be extracted with their release paths relative to
+`/srv/spt/SPT_Runtime`. Stop the server before changing files, then start it
+again:
 
 ```sh
 docker compose stop
-mkdir -p /srv/spt/user/mods
-cp -a /path/to/mod /srv/spt/user/mods/
+mkdir -p /srv/spt/SPT_Runtime/user/mods
+cp -a /path/to/mod /srv/spt/SPT_Runtime/user/mods/
 docker compose start
 ```
 
-For a mod release containing paths such as `SPT_Data/...`, copy its contents
-into `/srv/spt` instead. Client-side components still belong on each player's
-game installation; follow the mod's own installation instructions for those.
+For a mod release containing a top-level `SPT_Runtime/` or `BepInEx/` directory,
+copy its contents into `/srv/spt` to preserve its layout. `BepInEx` is a staging
+area only: it is not loaded by the server and must still be distributed to the
+players' game installations.
 
 ## First Fika Configuration
 
 The first startup creates:
 
 ```text
-/srv/spt/user/mods/fika-server/assets/configs/fika.jsonc
+/srv/spt/SPT_Runtime/user/mods/fika-server/assets/configs/fika.jsonc
 ```
 
 For a LAN or remote server, stop the container after this file appears, edit
@@ -152,7 +150,7 @@ the `server.SPT.http` values in `fika.jsonc`, then start it again:
 
 ```sh
 docker compose stop
-# edit /srv/spt/user/mods/fika-server/assets/configs/fika.jsonc
+# edit /srv/spt/SPT_Runtime/user/mods/fika-server/assets/configs/fika.jsonc
 docker compose start
 ```
 
@@ -182,7 +180,7 @@ FIKA_VERSION=2.4.0
 After a successful build, the script stops the server and creates
 `backups/spt-<timestamp>.tar.gz` before recreating the container. During the
 first boot of a new image, the bootstrap copies the new SPT runtime over
-`/srv/spt` and replaces Fika DLLs and static assets while retaining Fika
+`/srv/spt/SPT_Runtime` and replaces Fika DLLs and static assets while retaining Fika
 configuration and database files. Files changed in place by a mod can be
 overwritten during an SPT update, so reinstall those mods after updating.
 

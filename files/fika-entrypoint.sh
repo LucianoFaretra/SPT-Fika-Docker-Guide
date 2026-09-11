@@ -1,7 +1,9 @@
 #!/bin/sh
 set -eu
 
-APP_DIR=/opt/spt
+APP_ROOT=/opt/spt
+APP_DIR="${APP_ROOT}/SPT_Runtime"
+CLIENT_MOD_DIR="${APP_ROOT}/BepInEx"
 RUNTIME_SOURCE=/opt/spt-dist
 FIKA_SOURCE=/opt/fika-dist
 FIKA_DEST="${APP_DIR}/user/mods/fika-server"
@@ -23,6 +25,13 @@ if [ "${INSTALLED_SPT_VERSION}" != "${SOURCE_SPT_VERSION}" ]; then
     mkdir -p "${APP_DIR}"
     cp -a "${RUNTIME_SOURCE}/." "${APP_DIR}/"
     chown -R "${PUID:-1000}:${PGID:-1000}" "${APP_DIR}"
+fi
+
+# This is a host-side staging area for BepInEx client mods. SPT itself only
+# loads the server runtime below SPT_Runtime.
+mkdir -p "${CLIENT_MOD_DIR}/plugins"
+if [ "$(id -u)" = "0" ]; then
+    chown -R "${PUID:-1000}:${PGID:-1000}" "${CLIENT_MOD_DIR}"
 fi
 
 if [ "${INSTALLED_VERSION}" != "${FIKA_VERSION}" ]; then
