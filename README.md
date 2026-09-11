@@ -110,6 +110,19 @@ new SPT major version may require a matching Fika release. Keep a backup until
 you have confirmed the new server works; profile migrations may prevent a safe
 rollback after the updated server has started.
 
+## Publish to GHCR
+
+The `Build and publish SPT Fika image` workflow publishes a multi-architecture
+image to `ghcr.io/<fork-owner>/spt-fika-server`. Run it manually from the
+repository Actions tab after selecting an official SPT version, its matching
+manifest digest, and a published Fika Server C# version.
+
+The versioned tag is formatted as `4.1.5-fika-2.4.0`. Enable `tag_latest` only
+when that combination is the default image you want users to pull. The workflow
+uses the repository `GITHUB_TOKEN`; no personal access token is required.
+After the first publication, set the package visibility to public in its GHCR
+package settings if users must pull it without authenticating to GitHub.
+
 ## Useful Commands
 
 ```sh

@@ -1,0 +1,131 @@
+name: Build and publish SPT Fika image
+
+on:
+  workflow_dispatch:
+    inputs:
+      spt_version:
+        description: "Official stable SPTushonka version"
+        required: true
+        default: "4.1.5"
+      spt_digest:
+        description: "Matching GHCR manifest digest (sha256:...)"
+        required: true
+        default: "sha256:efd9ae3406b0b49769475828c393edffdc32f5df12e3bf130d7f446607a33ded"
+      fika_version:
+        description: "Published Fika Server C# version without the v prefix"
+        required: true
+        default: "2.4.0"
+      tag_latest:
+        description: "Also publish the latest tag"
+        required: true
+        type: boolean
+        default: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: spt-fika-server
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image name
+        id: image
+        shell: bash
+        run: echo "name=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push ${{ matrix.platform }} by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./files
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            SPT_VERSION=${{ inputs.spt_version }}
+            SPT_DIGEST=${{ inputs.spt_digest }}
+            FIKA_VERSION=${{ inputs.fika_version }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ inputs.spt_version }}-fika-${{ inputs.fika_version }}
+          outputs: type=image,name=${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      - name: Save image digest
+        run: |
+          digest="${{ steps.build.outputs.digest }}"
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Publish multi-architecture manifest
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    steps:
+      - name: Set image name
+        id: image
+        shell: bash
+        run: echo "name=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Download image digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Create and push manifest
+        working-directory: /tmp/digests
+        run: |
+          tags="-t ${{ steps.image.outputs.name }}:${{ inputs.spt_version }}-fika-${{ inputs.fika_version }}"
+          if [ "${{ inputs.tag_latest }}" = "true" ]; then
+            tags="$tags -t ${{ steps.image.outputs.name }}:latest"
+          fi
+          docker buildx imagetools create $tags \
+            $(for digest in *; do printf '%s@sha256:%s ' "${{ steps.image.outputs.name }}" "$digest"; done)
+
+      - name: Show published manifest
+        run: docker buildx imagetools inspect "${{ steps.image.outputs.name }}:${{ inputs.spt_version }}-fika-${{ inputs.fika_version }}"
