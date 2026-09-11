@@ -38,4 +38,5 @@ LABEL org.opencontainers.image.title="Fika SPT Server" \
       org.opencontainers.image.source="https://github.com/SP-Tushonka/server-csharp"
 
 # Preserve the upstream entrypoint: it configures SPT networking and drops to PUID:PGID.
+EXPOSE 6790/udp
 ENTRYPOINT ["/usr/local/bin/fika-entrypoint.sh"]

@@ -35,6 +35,7 @@ docker run -d --name fika --restart unless-stopped \
   -e PUID="$(id -u)" \
   -e PGID="$(id -g)" \
   -p 6969:6969 \
+  -p 6790:6790/udp \
   -v /srv/fika/spt-user:/opt/spt/user \
   "$IMAGE"
 ```
@@ -43,6 +44,20 @@ The container installs Fika into `/srv/fika/spt-user` on first boot. This
 directory contains profiles, certificates, Fika configuration, and Fika data;
 keep it when replacing the container. If the GHCR package is private, run
 `docker login ghcr.io` before pulling it.
+
+## Networking
+
+The container publishes `6969/TCP` for the SPT HTTP and WebSocket backend and
+`6790/UDP` for Fika's optional self-hosted NAT-punch service. Do not publish
+`6970`, `6971`, or `6972`: Fika Server C# does not listen on them.
+
+The UDP port is always published, but Fika controls whether its NAT-punch
+server listens on it. Enable or disable the NAT-punch service from Fika's
+interface; no container rebuild or Compose setting is needed.
+
+The raid itself is hosted by the game client, not this container. For direct
+Fika raids, forward the game host's configured UDP port (`25565` by default)
+on the machine running EscapeFromTarkov.exe.
 
 To update a registry deployment, pull a new versioned image and recreate the
 container with the same `/srv/fika/spt-user` bind mount:
