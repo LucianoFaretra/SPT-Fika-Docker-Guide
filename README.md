@@ -1,427 +1,130 @@
-# Setting up Fika SPT server with docker for Ubuntu/Debian/Raspberry Pi
-Last updated: 06/09/24
+# Fika SPT Docker Guide
 
-**Make sure your computer is 64-bit! Arm64 works too!**
+Docker deployment for SPTushonka and Fika Server C#. The default combination is:
 
-[For support you should join the Fika Discord server](https://discord.gg/project-fika)
+- SPTushonka `4.1.5`
+- Fika Server C# `2.4.0`
+- Fika Plugin `2.4.2` on every game client
 
-## Table Of Contents
+The container supports `linux/amd64` and `linux/arm64` because it is derived
+from the official multi-architecture SPTushonka image.
 
-[Installation](https://github.com/OnniSaarni/SPT-Fika-Docker-Guide#installing-docker)
+It intentionally keeps the official glibc-based SPT image. Alpine is not
+supported by SPT 4.1.5 because its native dependencies are not published for
+the `linux-musl` runtime identifiers.
 
-[Updating The Server](https://github.com/OnniSaarni/SPT-Fika-Docker-Guide#updating-to-newer-versions)
+## Requirements
 
-[Other Possibly Helpful Info](https://github.com/OnniSaarni/SPT-Fika-Docker-Guide#modding-and-other-possibly-helpful-info)
+- Docker Engine with Docker Compose v2
+- A 64-bit amd64 or arm64 Linux host
+- A local checkout of this guide
 
-[Automatic Setup Script](https://github.com/OnniSaarni/SPT-Fika-Docker-Guide/tree/main/files/setupScript)
-(Only use if you've already done the setup once before.)
+## Install
 
-[Casual discussion and questions can go here](https://gist.github.com/OnniSaarni/a3f840cef63335212ae085a3c6c10d5c)
+Copy the contents of `files/` to a new deployment directory. The directory is
+the Docker build context and holds all persistent data and backups.
 
-## Free VPS
-
-[A good free VPS from Oracle. It offers 24gb ram, 4 cores and 200gb of storage. It's ARM but works with this setup.](https://www.oracle.com/cloud/free/)
-
-## Recommended tools
-SSH: [Putty](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html)
-
-File Explorer: [WinSCP](https://winscp.net/eng/download.php)
-
-All-in-one recommendation: [VSCode](https://code.visualstudio.com/download) with the Remote Explorer extension installed.
-
-**DON"T LOOSE YOUR SSH KEY FILE!!!** Without this you won't be able to connect to your Oracle server - keep it somewhere **SAFE**
-
-## Installing Docker
-
-First of all you need Docker. [You can download it by following this guide here.](https://docs.docker.com/engine/install/ubuntu/)
-
-This guide is for ubuntu but you can find guides for other operating systems/distributions on their website.
-
-Here is a summary of the install commands from the guide:
-
-Step 1: Update the Package Index and Install Prerequisites
-```
-sudo apt-get update
-sudo apt-get install \
-    apt-transport-https \
-    ca-certificates \
-    curl \
-    gnupg \
-    lsb-release
-```
-
-Step 2: Add Docker’s Official GPG Key
-```
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-```
-
-Step 3: Set Up the Stable Repository
-```
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] \
-https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
-sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-```
-
-Step 4: Update the Package Index Again
-```
-sudo apt-get update
-```
-
-Step 5: Install latest Docker Engine
-```
-sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-```
-
-Step 6: Enable and Start Docker
-```
-sudo systemctl enable docker
-```
-```
-sudo systemctl start docker
-```
-
-Step 5: Add user to the docker group & activate the changes
-```
-sudo usermod -aG docker $USER
-```
-```
-newgrp docker
-```
-
-You can verify your Docker installation by running `docker --version`
-
-## Creating a user for docker (Recommended)
-
-For better security, it's recommended to set up a separate user for Docker containers.
-
-```
-sudo adduser dockercontainers
-```
-
-To be able to use docker with this user add them to the docker group
-
-```
-sudo groupadd docker
-sudo usermod -aG docker dockercontainers
-```
-
-You can log into the new account by entering this command:
-
-```
-su - dockercontainers
-```
-
-## Setting up the directories
-
-After you've got docker installed you can start by creating a new directory for your project and navigate to it in your terminal.
-
-I'm going to go ahead and create a new directory called "containers" and navigate to it.
-
-You can do this with:
-
-```
-mkdir containers
-cd containers
-```
-
-Now we're going to create new directories for our Fika Dockerfile and Fika SPT server and navigate to the Dockerfile directory.
-
-You can do this with:
-
-```
-mkdir fika
-mkdir server
-cd fika
-```
-
-The file structure looks like this:
-
-![file structure](images/fileStructure.png)
-
-## Creating the files
-
-Now we're going to create a new file called "Dockerfile" in the fika directory.
-
-**THIS NAME IS CASE SENSITIVE**
-
-You can do this with:
-
-```
-nano Dockerfile
+```sh
+mkdir -p /srv/fika
+cp -a files/. /srv/fika/
+cd /srv/fika
+cp .env.example .env
 ```
 
-Inside this file we're going to write the following: [(These are from the Fika Discord)](https://discord.com/channels/1202292159366037545/1236681505451933758)
+Alternatively, from this repository checkout run:
 
+```sh
+./files/setupScript/setup.sh /srv/fika
 ```
-##
-## Dockerfile
-## FIKA LINUX Container
-##
-
-FROM ubuntu:latest AS builder
-ARG FIKA=HEAD^
-ARG FIKA_TAG=[Insert Tag Here]
-ARG SPT=HEAD^
-ARG SPT_TAG=[Insert Tag Here]
-ARG NODE=20.11.1
-
-RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
-WORKDIR /opt
-
-# Install git git-lfs curl
-RUN apt update && apt install -yq git git-lfs curl
-# Install Node Version Manager and NodeJS
-RUN git clone https://github.com/nvm-sh/nvm.git $HOME/.nvm || true
-RUN \. $HOME/.nvm/nvm.sh && nvm install $NODE
-## Clone the SPT repo or continue if it exist
-RUN git clone https://dev.sp-tarkov.com/SPT/Server.git srv || true
-
-## Check out and git-lfs (specific commit --build-arg SPT=xxxx)
-WORKDIR /opt/srv/project
-
-RUN git checkout tags/$SPT_TAG
-RUN git checkout $SPT
-RUN git-lfs pull
-
-## remove the encoding from spt - todo: find a better workaround
-RUN sed -i '/setEncoding/d' /opt/srv/project/src/Program.ts || true
-
-## Install npm dependencies and run build
-RUN \. $HOME/.nvm/nvm.sh && npm install && npm run build:release -- --arch=$([ "$(uname -m)" = "aarch64" ] && echo arm64 || echo x64) --platform=linux
-## Move the built server and clean up the source
-RUN mv build/ /opt/server/
-WORKDIR /opt
-RUN rm -rf srv/
-## Grab FIKA Server Mod or continue if it exist
-RUN git clone https://github.com/project-fika/Fika-Server.git ./server/user/mods/fika-server
-WORKDIR ./server/user/mods/fika-server
-RUN git checkout tags/$FIKA_TAG
-RUN git checkout $FIKA
-RUN \. $HOME/.nvm/nvm.sh && npm install
-RUN rm -rf ../FIKA/.git
-
-FROM ubuntu:latest
-WORKDIR /opt/
-RUN apt update && apt upgrade -yq && apt install -yq dos2unix
-COPY --from=builder /opt/server /opt/srv
-COPY fcpy.sh /opt/fcpy.sh
-# Fix for Windows
-RUN dos2unix /opt/fcpy.sh
-
-# Set permissions
-RUN chmod o+rwx /opt -R
-
-# Exposing ports
-EXPOSE 6969
-EXPOSE 6970
-EXPOSE 6971
-
-# Specify the default command to run when the container starts
-CMD bash ./fcpy.sh
-```
-
-Press **Ctrl + S** to save and after that press **Ctrl + X** to exit.
-
-You can change the Fika and SPT versions If SPT or FIKA gets updated. In the `Dockerfile` you can change `FIKA_TAG` and `SPT_TAG` args to the version you want. E.g. `ARG FIKA_TAG=v2.1.1` and `ARG SPT_TAG=3.8.3`.
-
-![#f03c15](https://placehold.co/15x15/f03c15/ff0000.png) **Warning!** ![#f03c15](https://placehold.co/15x15/f03c15/ff0000.png) Make sure that selected tag versions are compatible. **Please double check the current versions of SPT and Fika!**
-
-And then we will create a new file called "fcpy.sh" in the fika directory. **THIS NAME IS CASE SENSITIVE**
-
-You can do this with:
-
-```
-nano fcpy.sh
-```
-
-Inside this file we're going to write the following: [(These are from the Fika Discord)](https://discord.com/channels/1202292159366037545/1236681505451933758)
-
-```
-# fcpy.sh
-
-#!/bin/bash
-echo "FIKA Docker"
-
-if [ -d "/opt/srv" ]; then
-    start=$(date +%s)
-    echo "Started copying files to your volume/directory.. Please wait."
-    cp -r /opt/srv/* /opt/server/
-    rm -r /opt/srv
-    end=$(date +%s)
-    
-    echo "Files copied to your machine in $(($end-$start)) seconds."
-    echo "Starting the server to generate all the required files"
-    cd /opt/server
-    chown $(id -u):$(id -g) ./* -Rf
-    if [ -f /opt/server/SPT_Data/Server/configs/http.json ]; then
-    	sed -i 's/127.0.0.1/0.0.0.0/g' /opt/server/SPT_Data/Server/configs/http.json
-	NODE_CHANNEL_FD= timeout --preserve-status 40s ./SPT.Server.exe </dev/null >/dev/null 2>&1
-    else
-	sed -i 's/127.0.0.1/0.0.0.0/g' /opt/server/Aki_Data/Server/configs/http.json
-	NODE_CHANNEL_FD= timeout --preserve-status 40s ./Aki.Server.exe </dev/null >/dev/null 2>&1
-    fi
-    echo "Follow the instructions to proceed!"
-fi
-
-if [ -e "/opt/server/delete_me" ]; then
-    echo "Error: Safety file found. Exiting."
-    echo "Please follow the instructions."
-     sleep 30
-    exit 1
-fi
-
-cd /opt/server
-
-if [ -f ./SPT.Server.exe ]; then
-   ./SPT.Server.exe
-else
-   ./Aki.Server.exe
-fi
-echo "Exiting."
-exit 0
-```
-
-## Setting up the Docker container
-
-After the files have been created we can start the setup.
-
-First off we're going to run this in the "fika" directory:
-
-```
-docker build --no-cache --label FIKA -t fika .
-```
 
-It will take a while but once it is finished we are going to move on to the next command. 
+Edit `.env` before the first build:
 
-**In the next command need to change your "PATHTOYOURSERVERFILE" to your server directory path.**
-To do this you can navigate to the server directory we created earlier. If you are still in the "fika" directory (you can confirm this by running `pwd` in your current directory), you can navigate to the "server" directory by running:
-
-```
-cd ..
-cd server
-```
+- Set `PUID` and `PGID` to the owner of `/srv/fika/spt-user` (`id -u` and `id -g`).
+- Keep `SPT_VERSION=4.1.5` and `FIKA_VERSION=2.4.0` for the supported default.
+- Keep the matching `SPT_DIGEST` when changing `SPT_VERSION`. Obtain both values
+  from the official SPTushonka container package page.
 
-Then by running `pwd` you can get the path to your server file. Copy this value and replace it with "**PATHTOYOURSERVERFILE**".
+Build, back up existing data if present, and start the service:
 
-```
-docker run --pull=never -v PATHTOYOURSERVERFILE:/opt/server -p 6969:6969 -p 6970:6970 -p 6971:6971 -p 6972:6972 -it --name fika --log-opt max-size=10m --log-opt max-file=3 fika
+```sh
+./update.sh
 ```
 
-## Starting the container
+Follow startup output with:
 
-After the docker run command we are going to start the container:
-
-```
-docker start fika
+```sh
+docker compose logs -f fika-server
 ```
-```
-docker update --restart unless-stopped fika
-```
 
-After starting the container you can see the logs of it with:
-```
-docker logs fika -f
-```
+The persistent server data is stored in `/srv/fika/spt-user`. Removing the
+container does not remove this directory.
 
-## Helpful Docker commands
+## First Fika Configuration
 
-To see the logs of the container:
+The first startup creates:
 
+```text
+spt-user/mods/fika-server/assets/configs/fika.jsonc
 ```
-docker logs fika -f
-```
-
-You can use **Ctrl + C** to exit the logs.
 
-To stop the container:
+For a LAN or remote server, stop the container after this file appears, edit
+the `server.SPT.http` values in `fika.jsonc`, then start it again:
 
+```sh
+docker compose stop
+# edit spt-user/mods/fika-server/assets/configs/fika.jsonc
+docker compose start
 ```
-docker stop fika
-```
 
-To restart the container:
+Set `backendIp` to the address clients can reach, never `0.0.0.0`. The service
+always listens on container port `6969`; do not change `server.SPT.http.port`.
+If you set `HOST_PORT` to a different host port, set only `backendPort` to that
+same host port. Fika rewrites the SPT HTTP configuration from this file on every
+startup, so changing only the upstream SPT backend setting after first boot is
+not sufficient.
 
-```
-docker restart fika
-```
+Install the matching client component from the
+[Fika Plugin 2.4.2 release](https://github.com/project-fika/Fika-Plugin/releases/tag/v2.4.2)
+on every player machine.
 
-## Updating to newer versions
+## Updates
 
-First off you will have to stop the server with:
+Docker restarts do not update software. To update, edit the SPT version and its
+matching manifest digest, plus the Fika version, in `.env`, then run
+`./update.sh`:
 
+```dotenv
+SPT_VERSION=4.1.5
+SPT_DIGEST=sha256:efd9ae3406b0b49769475828c393edffdc32f5df12e3bf130d7f446607a33ded
+FIKA_VERSION=2.4.0
 ```
-docker stop fika
-```
-
-[How to find out your server directory path](https://gist.github.com/OnniSaarni/a3f840cef63335212ae085a3c6c10d5c#setting-up-the-docker-container)
 
-It is recommended to backup your profiles in your server/user/profiles directory. You can copy them to your home directory with this command (assuming you made an account earlier):
-
-```
-cp -r PATHTOYOURSERVERFILE/server/user/profiles /home/dockercontainers/profilesBackup
-```
+After a successful build, the script stops the server and creates
+`backups/spt-user-<timestamp>.tar.gz` before recreating the container. During
+the first boot of a new image, the bootstrap replaces Fika DLLs and static assets
+while retaining Fika configuration and database files. SPT profiles, certificates,
+logs, and all other server mods remain in `spt-user`.
 
-The profile files will be copied over to your home directory. If you haven't made a separate account you should change the command.
+Only select official stable SPT tags and published Fika Server C# releases. A
+new SPT major version may require a matching Fika release. Keep a backup until
+you have confirmed the new server works; profile migrations may prevent a safe
+rollback after the updated server has started.
 
-Next we need to delete the container and the image. We can do that by running these commands:
+## Useful Commands
 
-```
-docker rm fika
-```
-```
-docker rmi FIKA
-```
-```
-docker image prune
-```
+```sh
+# Stop without deleting data.
+docker compose stop
 
-After that we need to rebuild the container from within the fika directory:
+# Start an existing container.
+docker compose start
 
-```
-docker build --no-cache --label FIKA -t fika .
-```
+# View service state.
+docker compose ps
 
-And then we can start it back up with: [REMEMBER TO CHANGE PATHTOYOURSERVERFILE](https://gist.github.com/OnniSaarni/a3f840cef63335212ae085a3c6c10d5c#setting-up-the-docker-container)
-```
-cd ..
-```
-```
-cd server
-```
+# Stop and remove the container; spt-user remains intact.
+docker compose down
 ```
-docker run --pull=never -v PATHTOYOURSERVERFILE:/opt/server -p 6969:6969 -p 6970:6970 -p 6971:6971 -p 6972:6972 -it --name fika --log-opt max-size=10m --log-opt max-file=3 fika
-```
-```
-docker start fika
-```
-```
-docker update --restart unless-stopped fika
-```
-
-Now your server is updated.
-
-[To update your client you can follow the instructions here.](https://dev.sp-tarkov.com/SPT/Stable-releases/releases) [You will also need to download the newest Fika plugin from here.](https://github.com/project-fika/Fika-Plugin/releases)
-
-## Modding and other possibly helpful info
-
-To play with your friends you first have to port forward or disable the firewall for port 6969 on the server.
-
-To host Co-Op raids with your friends you either have to have UPnP enabled or have port 25565 forwarded to your PC. 
-You should also disable the firewall for the EscapeFromTarkov.exe and allow ports in the firewall. [More info over here](https://github.com/project-fika/Fika-Documentation?tab=readme-ov-file#installation)
-
-To add more mods to the game you have to add them to the "users" directory in the server directory.
-
-http.json should be pre configured for port forwarding in this setup.
-
-[You might also want to look into making automatic backups with cron.](https://unix.stackexchange.com/a/16954)
-
-It's not necessary but it's a plus. I'm not going to go into it in depth but if someone wants they are free to make a simple guide for it.
-
-[This is a maintained/modified fork of this guide with an included mod-pack, scripts for pre & post installation, automated restarts & daily launcher background changes.](https://github.com/Dildz/SPT-Fika-modded--Docker-Guide)
-
-## Credits
-
-Thanks to everyone who contributed for helping others in the comments and providing fixes.
-Thanks to @Dildz for creating a more in-depth guide and improving this guide!
 
-[Special thanks to k2rlxyz for making the original Dockerfile.](https://hub.docker.com/r/k2rlxyz/fika) It can also be found in the [Discord](https://discord.gg/project-fika).
+For co-op connectivity and game-host port forwarding, follow the current
+[Fika documentation](https://github.com/project-fika/Fika-Documentation).

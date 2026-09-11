@@ -1,6 +1,13 @@
-# Automatic Setup ( READ THIS V )
-This script creates the directories and dockerfiles automatically for you.
-You should only use it if you've already once done the regular setup. 
-This script only creates the file structure and it does not create a new user or automatically start the docker as you have to configure the mod versions manually.
+# Setup Helper
 
-I just quickly setup this and can't really guarantee it will work.
+Run this script from a checkout of this repository to copy the current Docker
+configuration into a deployment directory:
+
+```sh
+./setup.sh /srv/fika
+```
+
+It creates `Dockerfile`, `compose.yaml`, `.env.example`, `update.sh`, and the
+Fika bootstrap entrypoint. Existing files are never overwritten. Edit
+`/srv/fika/.env`, then run `/srv/fika/update.sh` to create the image and start
+the server.

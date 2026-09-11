@@ -1,65 +1,41 @@
-##
-## Dockerfile
-## FIKA LINUX Container
-##
+# Set these from an official stable image at
+# https://github.com/orgs/SP-Tushonka/packages/container/server-csharp.
+ARG SPT_VERSION=4.1.5
+ARG SPT_DIGEST=sha256:efd9ae3406b0b49769475828c393edffdc32f5df12e3bf130d7f446607a33ded
+FROM ghcr.io/sp-tushonka/server-csharp:${SPT_VERSION}@${SPT_DIGEST}
 
-FROM ubuntu:latest AS builder
-ARG FIKA=HEAD^
-ARG FIKA_TAG=[Insert Tag Here]
-ARG SPT=HEAD^
-ARG SPT_TAG=[Insert Tag Here]
-ARG NODE=20.11.1
+ARG SPT_VERSION
+ARG SPT_DIGEST
+ARG FIKA_VERSION=2.4.0
 
-RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
-WORKDIR /opt
+USER root
 
-# Install git git-lfs curl
-RUN apt update && apt install -yq git git-lfs curl
-# Install Node Version Manager and NodeJS
-RUN git clone https://github.com/nvm-sh/nvm.git $HOME/.nvm || true
-RUN \. $HOME/.nvm/nvm.sh && nvm install $NODE
-## Clone the SPT repo or continue if it exist
-RUN git clone https://dev.sp-tarkov.com/SPT/Server.git srv || true
+# The SPT image already provides curl and jq. Resolve the Fika release asset from
+# GitHub and verify GitHub's published SHA-256 digest before baking it into the image.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends unzip; \
+    rm -rf /var/lib/apt/lists/*; \
+    release_json="$(curl -fsSL "https://api.github.com/repos/project-fika/Fika-Server-CSharp/releases/tags/v${FIKA_VERSION}")"; \
+    asset_url="$(printf '%s' "$release_json" | jq -er '[.assets[] | select(.content_type == "application/zip")] | if length == 1 then .[0].browser_download_url else error("expected exactly one Fika ZIP asset") end')"; \
+    asset_digest="$(printf '%s' "$release_json" | jq -er '[.assets[] | select(.content_type == "application/zip")] | if length == 1 then .[0].digest else error("expected exactly one Fika ZIP asset") end | sub("^sha256:"; "")')"; \
+    test "${#asset_digest}" = 64; \
+    mkdir -p /tmp/fika /opt/fika-dist; \
+    curl -fsSL "$asset_url" -o /tmp/fika.zip; \
+    echo "$asset_digest  /tmp/fika.zip" | sha256sum -c -; \
+    unzip -q /tmp/fika.zip -d /tmp/fika; \
+    test -d /tmp/fika/SPT_Runtime/user/mods/fika-server; \
+    cp -a /tmp/fika/SPT_Runtime/user/mods/fika-server/. /opt/fika-dist/; \
+    printf '%s\n' "$FIKA_VERSION" > /opt/fika-dist/.version; \
+    rm -rf /tmp/fika /tmp/fika.zip
 
-## Check out and git-lfs (specific commit --build-arg SPT=xxxx)
-WORKDIR /opt/srv/project
+COPY fika-entrypoint.sh /usr/local/bin/fika-entrypoint.sh
+RUN chmod +x /usr/local/bin/fika-entrypoint.sh
 
-RUN git checkout tags/$SPT_TAG
-RUN git checkout $SPT
-RUN git-lfs pull
+LABEL org.opencontainers.image.title="Fika SPT Server" \
+      org.opencontainers.image.description="SPTushonka with the Fika server mod" \
+      org.opencontainers.image.version="${SPT_VERSION}-fika-${FIKA_VERSION}" \
+      org.opencontainers.image.source="https://github.com/SP-Tushonka/server-csharp"
 
-## remove the encoding from spt - todo: find a better workaround
-RUN sed -i '/setEncoding/d' /opt/srv/project/src/Program.ts || true
-
-## Install npm dependencies and run build
-RUN \. $HOME/.nvm/nvm.sh && npm install && npm run build:release -- --arch=$([ "$(uname -m)" = "aarch64" ] && echo arm64 || echo x64) --platform=linux
-## Move the built server and clean up the source
-RUN mv build/ /opt/server/
-WORKDIR /opt
-RUN rm -rf srv/
-## Grab FIKA Server Mod or continue if it exist
-RUN git clone https://github.com/project-fika/Fika-Server.git ./server/user/mods/fika-server
-WORKDIR ./server/user/mods/fika-server
-RUN git checkout tags/$FIKA_TAG
-RUN git checkout $FIKA
-RUN \. $HOME/.nvm/nvm.sh && npm install
-RUN rm -rf ../FIKA/.git
-
-FROM ubuntu:latest
-WORKDIR /opt/
-RUN apt update && apt upgrade -yq && apt install -yq dos2unix
-COPY --from=builder /opt/server /opt/srv
-COPY fcpy.sh /opt/fcpy.sh
-# Fix for Windows
-RUN dos2unix /opt/fcpy.sh
-
-# Set permissions
-RUN chmod o+rwx /opt -R
-
-# Exposing ports
-EXPOSE 6969
-EXPOSE 6970
-EXPOSE 6971
-
-# Specify the default command to run when the container starts
-CMD bash ./fcpy.sh
+# Preserve the upstream entrypoint: it configures SPT networking and drops to PUID:PGID.
+ENTRYPOINT ["/usr/local/bin/fika-entrypoint.sh"]
