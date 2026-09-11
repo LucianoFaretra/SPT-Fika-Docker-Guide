@@ -36,7 +36,7 @@ docker run -d --name fika --restart unless-stopped \
   -e PGID="$(id -g)" \
   -p 6969:6969 \
   -p 6790:6790/udp \
-  -v /srv/spt:/opt/server \
+  -v /srv/spt:/opt/spt \
   "$IMAGE"
 ```
 

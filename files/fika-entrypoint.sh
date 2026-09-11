@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-APP_DIR=/opt/server
-RUNTIME_SOURCE=/opt/spt
+APP_DIR=/opt/spt
+RUNTIME_SOURCE=/opt/spt-dist
 FIKA_SOURCE=/opt/fika-dist
 FIKA_DEST="${APP_DIR}/user/mods/fika-server"
 FIKA_VERSION="$(cat "${FIKA_SOURCE}/.version")"

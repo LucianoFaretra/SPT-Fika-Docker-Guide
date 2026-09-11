@@ -29,9 +29,12 @@ RUN set -eux; \
     printf '%s\n' "$FIKA_VERSION" > /opt/fika-dist/.version; \
     rm -rf /tmp/fika /tmp/fika.zip
 
-# The entrypoint copies this runtime into the full host-mounted server tree.
-RUN printf '%s\n' "$SPT_VERSION" > /opt/spt/.container-spt-version
-WORKDIR /opt/server
+# Keep the image runtime outside the full host mount. The entrypoint copies it
+# into /opt/spt on first boot.
+RUN mv /opt/spt /opt/spt-dist \
+    && printf '%s\n' "$SPT_VERSION" > /opt/spt-dist/.container-spt-version \
+    && mkdir -p /opt/spt
+WORKDIR /opt/spt
 
 COPY fika-entrypoint.sh /usr/local/bin/fika-entrypoint.sh
 RUN chmod +x /usr/local/bin/fika-entrypoint.sh
