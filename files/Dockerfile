@@ -29,6 +29,10 @@ RUN set -eux; \
     printf '%s\n' "$FIKA_VERSION" > /opt/fika-dist/.version; \
     rm -rf /tmp/fika /tmp/fika.zip
 
+# The entrypoint copies this runtime into the full host-mounted server tree.
+RUN printf '%s\n' "$SPT_VERSION" > /opt/spt/.container-spt-version
+WORKDIR /opt/server
+
 COPY fika-entrypoint.sh /usr/local/bin/fika-entrypoint.sh
 RUN chmod +x /usr/local/bin/fika-entrypoint.sh
 
@@ -37,6 +41,5 @@ LABEL org.opencontainers.image.title="Fika SPT Server" \
       org.opencontainers.image.version="${SPT_VERSION}-fika-${FIKA_VERSION}" \
       org.opencontainers.image.source="https://github.com/SP-Tushonka/server-csharp"
 
-# Preserve the upstream entrypoint: it configures SPT networking and drops to PUID:PGID.
 EXPOSE 6790/udp
 ENTRYPOINT ["/usr/local/bin/fika-entrypoint.sh"]

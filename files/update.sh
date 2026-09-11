@@ -31,12 +31,12 @@ docker compose build --pull
 echo "Stopping the server before backing up persistent data"
 docker compose stop
 
-if [ -d spt-user ]; then
+if [ -d /srv/spt ]; then
     timestamp="$(date +%Y%m%d-%H%M%S)"
     mkdir -p "${BACKUP_DIR}"
-    backup_file="${BACKUP_DIR}/spt-user-${timestamp}.tar.gz"
+    backup_file="${BACKUP_DIR}/spt-${timestamp}.tar.gz"
     echo "Creating backup ${backup_file}"
-    tar -czf "${backup_file}" -C spt-user .
+    tar -czf "${backup_file}" -C /srv/spt .
 fi
 
 docker compose up -d --force-recreate --remove-orphans

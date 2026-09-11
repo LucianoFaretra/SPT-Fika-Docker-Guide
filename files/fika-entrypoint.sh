@@ -1,14 +1,28 @@
 #!/bin/sh
 set -eu
 
-APP_DIR=/opt/spt
+APP_DIR=/opt/server
+RUNTIME_SOURCE=/opt/spt
 FIKA_SOURCE=/opt/fika-dist
 FIKA_DEST="${APP_DIR}/user/mods/fika-server"
 FIKA_VERSION="$(cat "${FIKA_SOURCE}/.version")"
+SOURCE_SPT_VERSION="$(cat "${RUNTIME_SOURCE}/.container-spt-version")"
+INSTALLED_SPT_VERSION=""
 INSTALLED_VERSION=""
+
+if [ -f "${APP_DIR}/.container-spt-version" ]; then
+    INSTALLED_SPT_VERSION="$(cat "${APP_DIR}/.container-spt-version")"
+fi
 
 if [ -f "${FIKA_DEST}/.container-fika-version" ]; then
     INSTALLED_VERSION="$(cat "${FIKA_DEST}/.container-fika-version")"
+fi
+
+if [ "${INSTALLED_SPT_VERSION}" != "${SOURCE_SPT_VERSION}" ]; then
+    echo "[fika-entrypoint] Installing SPT ${SOURCE_SPT_VERSION} into ${APP_DIR}"
+    mkdir -p "${APP_DIR}"
+    cp -a "${RUNTIME_SOURCE}/." "${APP_DIR}/"
+    chown -R "${PUID:-1000}:${PGID:-1000}" "${APP_DIR}"
 fi
 
 if [ "${INSTALLED_VERSION}" != "${FIKA_VERSION}" ]; then
@@ -61,4 +75,43 @@ if [ "${INSTALLED_VERSION}" != "${FIKA_VERSION}" ]; then
     trap - 0 1 2 15
 fi
 
-exec /usr/local/bin/entrypoint.sh "$@"
+CONFIG="${APP_DIR}/SPT_Data/configs/http.json"
+SERVER_BIN="${APP_DIR}/SPT.Server.Linux"
+SPT_IP="${SPT_IP:-0.0.0.0}"
+SPT_PORT="${SPT_PORT:-6969}"
+SPT_BACKEND_IP="${SPT_BACKEND_IP:-127.0.0.1}"
+SPT_BACKEND_PORT="${SPT_BACKEND_PORT:-${SPT_PORT}}"
+
+if [ -f "${CONFIG}" ]; then
+    config_tmp="${CONFIG}.tmp"
+    if jq \
+        --arg ip "${SPT_IP}" \
+        --argjson port "${SPT_PORT}" \
+        --arg backend_ip "${SPT_BACKEND_IP}" \
+        --argjson backend_port "${SPT_BACKEND_PORT}" \
+        '.ip = $ip | .port = $port | .backendIp = $backend_ip | .backendPort = $backend_port' \
+        "${CONFIG}" > "${config_tmp}"; then
+        mv "${config_tmp}" "${CONFIG}"
+        chmod 0644 "${CONFIG}"
+        echo "[fika-entrypoint] Updated listen ${SPT_IP}:${SPT_PORT} and backend ${SPT_BACKEND_IP}:${SPT_BACKEND_PORT}"
+    else
+        rm -f "${config_tmp}"
+        echo "[fika-entrypoint] WARNING: failed to rewrite ${CONFIG}" >&2
+    fi
+else
+    echo "[fika-entrypoint] WARNING: ${CONFIG} not found; skipping network config" >&2
+fi
+
+mkdir -p "${APP_DIR}/user/mods" "${APP_DIR}/user/profiles" "${APP_DIR}/user/logs" "${APP_DIR}/user/certs"
+export HOME="${APP_DIR}/user"
+
+if [ "$(id -u)" = "0" ]; then
+    PUID="${PUID:-1000}"
+    PGID="${PGID:-1000}"
+    chown -R "${PUID}:${PGID}" "${APP_DIR}/user"
+    echo "[fika-entrypoint] Starting server as ${PUID}:${PGID}"
+    exec gosu "${PUID}:${PGID}" "${SERVER_BIN}" "$@"
+fi
+
+echo "[fika-entrypoint] Starting server as $(id -u):$(id -g)"
+exec "${SERVER_BIN}" "$@"

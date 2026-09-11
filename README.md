@@ -29,21 +29,20 @@ so the published image name is `ghcr.io/lucianofaretra/spt-fika-server`.
 
 ```sh
 export IMAGE=ghcr.io/lucianofaretra/spt-fika-server:4.1.5-fika-2.4.0
-mkdir -p /srv/fika/spt-user
+mkdir -p /srv/spt
 docker pull "$IMAGE"
 docker run -d --name fika --restart unless-stopped \
   -e PUID="$(id -u)" \
   -e PGID="$(id -g)" \
   -p 6969:6969 \
   -p 6790:6790/udp \
-  -v /srv/fika/spt-user:/opt/spt/user \
+  -v /srv/spt:/opt/server \
   "$IMAGE"
 ```
 
-The container installs Fika into `/srv/fika/spt-user` on first boot. This
-directory contains profiles, certificates, Fika configuration, and Fika data;
-keep it when replacing the container. If the GHCR package is private, run
-`docker login ghcr.io` before pulling it.
+On first boot the container copies the complete SPT and Fika server tree into
+`/srv/spt`. Keep this directory when replacing the container. If the GHCR
+package is private, run `docker login ghcr.io` before pulling it.
 
 ## Networking
 
@@ -60,7 +59,7 @@ Fika raids, forward the game host's configured UDP port (`25565` by default)
 on the machine running EscapeFromTarkov.exe.
 
 To update a registry deployment, pull a new versioned image and recreate the
-container with the same `/srv/fika/spt-user` bind mount:
+container with the same `/srv/spt` bind mount:
 
 ```sh
 export IMAGE=ghcr.io/lucianofaretra/spt-fika-server:4.1.5-fika-2.4.0
@@ -72,11 +71,12 @@ docker rm fika
 
 ## Build Locally
 
-Copy the contents of `files/` to a new deployment directory. The directory is
-the Docker build context and holds all persistent data and backups.
+Copy the contents of `files/` to a deployment directory. It is the Docker build
+context and holds the Compose files and backups; the complete persistent server
+runtime is stored separately in `/srv/spt`.
 
 ```sh
-mkdir -p /srv/fika
+mkdir -p /srv/fika /srv/spt
 cp -a files/. /srv/fika/
 cd /srv/fika
 cp .env.example .env
@@ -90,7 +90,7 @@ Alternatively, from this repository checkout run:
 
 Edit `.env` before the first build:
 
-- Set `PUID` and `PGID` to the owner of `/srv/fika/spt-user` (`id -u` and `id -g`).
+- Set `PUID` and `PGID` to the owner of `/srv/spt` (`id -u` and `id -g`).
 - Keep `SPT_VERSION=4.1.5` and `FIKA_VERSION=2.4.0` for the supported default.
 - Keep the matching `SPT_DIGEST` when changing `SPT_VERSION`. Obtain both values
   from the official SPTushonka container package page.
@@ -107,15 +107,44 @@ Follow startup output with:
 docker compose logs -f fika-server
 ```
 
-The persistent server data is stored in `/srv/fika/spt-user`. Removing the
-container does not remove this directory.
+The persistent server runtime is stored in `/srv/spt`. Removing the container
+does not remove this directory.
+
+### Migrate Existing Data
+
+Deployments created with the earlier `spt-user` layout must move their existing
+user data before the first full-runtime start:
+
+```sh
+docker compose down
+mkdir -p /srv/spt/user
+cp -a /srv/fika/spt-user/. /srv/spt/user/
+```
+
+## Server Mods
+
+The full SPT installation is available in `/srv/spt`. Standard server mods go
+in `/srv/spt/user/mods`; mods that provide files elsewhere must be extracted
+with their release paths relative to `/srv/spt`. Stop the server before changing
+files, then start it again:
+
+```sh
+docker compose stop
+mkdir -p /srv/spt/user/mods
+cp -a /path/to/mod /srv/spt/user/mods/
+docker compose start
+```
+
+For a mod release containing paths such as `SPT_Data/...`, copy its contents
+into `/srv/spt` instead. Client-side components still belong on each player's
+game installation; follow the mod's own installation instructions for those.
 
 ## First Fika Configuration
 
 The first startup creates:
 
 ```text
-spt-user/mods/fika-server/assets/configs/fika.jsonc
+/srv/spt/user/mods/fika-server/assets/configs/fika.jsonc
 ```
 
 For a LAN or remote server, stop the container after this file appears, edit
@@ -123,7 +152,7 @@ the `server.SPT.http` values in `fika.jsonc`, then start it again:
 
 ```sh
 docker compose stop
-# edit spt-user/mods/fika-server/assets/configs/fika.jsonc
+# edit /srv/spt/user/mods/fika-server/assets/configs/fika.jsonc
 docker compose start
 ```
 
@@ -151,10 +180,11 @@ FIKA_VERSION=2.4.0
 ```
 
 After a successful build, the script stops the server and creates
-`backups/spt-user-<timestamp>.tar.gz` before recreating the container. During
-the first boot of a new image, the bootstrap replaces Fika DLLs and static assets
-while retaining Fika configuration and database files. SPT profiles, certificates,
-logs, and all other server mods remain in `spt-user`.
+`backups/spt-<timestamp>.tar.gz` before recreating the container. During the
+first boot of a new image, the bootstrap copies the new SPT runtime over
+`/srv/spt` and replaces Fika DLLs and static assets while retaining Fika
+configuration and database files. Files changed in place by a mod can be
+overwritten during an SPT update, so reinstall those mods after updating.
 
 Only select official stable SPT tags and published Fika Server C# releases. A
 new SPT major version may require a matching Fika release. Keep a backup until
@@ -186,7 +216,7 @@ docker compose start
 # View service state.
 docker compose ps
 
-# Stop and remove the container; spt-user remains intact.
+# Stop and remove the container; /srv/spt remains intact.
 docker compose down
 ```
 
