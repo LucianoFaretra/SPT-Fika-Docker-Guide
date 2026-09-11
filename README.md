@@ -15,11 +15,47 @@ the `linux-musl` runtime identifiers.
 
 ## Requirements
 
-- Docker Engine with Docker Compose v2
+- Docker Engine
 - A 64-bit amd64 or arm64 Linux host
-- A local checkout of this guide
+- Docker Compose v2 and a local checkout only when building locally
 
-## Install
+## Deploy from GHCR
+
+After publishing the image with the GitHub Actions workflow, a server can run it
+directly without downloading this repository or building locally:
+
+The GitHub account is `LucianoFaretra`; GHCR repository paths must be lowercase,
+so the published image name is `ghcr.io/lucianofaretra/spt-fika-server`.
+
+```sh
+export IMAGE=ghcr.io/lucianofaretra/spt-fika-server:4.1.5-fika-2.4.0
+mkdir -p /srv/fika/spt-user
+docker pull "$IMAGE"
+docker run -d --name fika --restart unless-stopped \
+  -e PUID="$(id -u)" \
+  -e PGID="$(id -g)" \
+  -p 6969:6969 \
+  -v /srv/fika/spt-user:/opt/spt/user \
+  "$IMAGE"
+```
+
+The container installs Fika into `/srv/fika/spt-user` on first boot. This
+directory contains profiles, certificates, Fika configuration, and Fika data;
+keep it when replacing the container. If the GHCR package is private, run
+`docker login ghcr.io` before pulling it.
+
+To update a registry deployment, pull a new versioned image and recreate the
+container with the same `/srv/fika/spt-user` bind mount:
+
+```sh
+export IMAGE=ghcr.io/lucianofaretra/spt-fika-server:4.1.5-fika-2.4.0
+docker pull "$IMAGE"
+docker stop fika
+docker rm fika
+# Run the docker run command above again with the same bind mount.
+```
+
+## Build Locally
 
 Copy the contents of `files/` to a new deployment directory. The directory is
 the Docker build context and holds all persistent data and backups.
@@ -87,7 +123,7 @@ Install the matching client component from the
 [Fika Plugin 2.4.2 release](https://github.com/project-fika/Fika-Plugin/releases/tag/v2.4.2)
 on every player machine.
 
-## Updates
+## Local Build Updates
 
 Docker restarts do not update software. To update, edit the SPT version and its
 matching manifest digest, plus the Fika version, in `.env`, then run
@@ -141,3 +177,8 @@ docker compose down
 
 For co-op connectivity and game-host port forwarding, follow the current
 [Fika documentation](https://github.com/project-fika/Fika-Documentation).
+
+## Credits
+
+This fork builds on the original work from
+[Dildz/SPT-Fika-Docker-Guide](https://github.com/Dildz/SPT-Fika-Docker-Guide).
